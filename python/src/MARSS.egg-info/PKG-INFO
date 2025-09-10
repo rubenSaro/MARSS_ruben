@@ -1,4 +1,4 @@
-Metadata-Version: 2.1
+Metadata-Version: 2.4
 Name: MARSS
 Version: 1.0.1
 Summary: MARSS is a regression-based method that mitigates an artifactual shared signal between simultaneously acquired slices in unprocessed MB fMRI.
@@ -21,6 +21,7 @@ Requires-Dist: python-dateutil
 Requires-Dist: traitsui
 Requires-Dist: nipype[all]
 Requires-Dist: seaborn
+Dynamic: license-file
 
 # Multiband Artifact Regression in Simultaneous Slices (MARSS)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)<br>

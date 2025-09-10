@@ -15,23 +15,44 @@ import numpy
 import traits 
 import traitsui 
 import nipype
-import seaborn
+import seaborn as sns
 import shutil
+import re
+from pathlib import Path
+
+# Ruben Sanchez-Romero, Sep 2025, add functionality to work with XXX.nii.gz files
+
+# Added by Ruben Sanchez-Romero, September 2025
+def split_nii_ext(filename: str):
+    """
+    Return (stem, extension) where extension is either
+    '.nii', '.nii.gz', or the normal last extension.
+    """
+    base = Path(filename).name
+    m = re.match(r"^(?P<stem>.*?)(?P<ext>\.nii(?:\.gz)?)$", base, flags=re.IGNORECASE)
+    if not m:
+        raise ValueError(f"File does not end with .nii or .nii.gz: {filename}")
+    return m.group("stem"), m.group("ext")
 
 
 def MARSS_getMPs(fn, MB, workingDir):
+    # Ruben: this get motion parameters using mcflirt
+
     # Load volume timeseries
     V = nib.load(fn)
 
     if V.shape[2] % MB != 0:
         raise ValueError(f"Number of slices and MB factor are incompatible for {fn}.")
 
-    p, f = os.path.split(fn)
-    f = os.path.splitext(f)[0]
-
+    #p, f = os.path.split(fn)
+    #f = os.path.splitext(f)[0]
+    # the above will have problems dealing with files xxx.nii.gz
+    f,ext = split_nii_ext(fn)
 
     # Check workingDir for MPs
-    mp_path = os.path.join(workingDir, f"rp_{f}.txt")
+    # Use Path instead of os.path
+    #mp_path = os.path.join(workingDir, f"rp_{f}.txt")
+    mp_path = Path(workingDir) / f"rp_{f}.txt"
 
     if not os.path.exists(mp_path):
         
@@ -41,7 +62,8 @@ def MARSS_getMPs(fn, MB, workingDir):
         
         mcflt.inputs.cost = 'mutualinfo'
         
-        rp_path = os.path.join(workingDir, f"rp_{f}.nii")
+        #rp_path = os.path.join(workingDir, f"rp_{f}{ext}")
+        rp_path = Path(workingDir) / f"rp_{f}{ext}"
         mcflt.inputs.out_file = rp_path
         mcflt.inputs.output_type = "NIFTI"
 
@@ -57,20 +79,23 @@ def MARSS_getMPs(fn, MB, workingDir):
     # Copy the MP text file to the working directory
     if not os.path.exists(mp_path):
         
-        mp_file_src = os.path.join(workingDir, f"{rp_path}.par")      
+        mp_file_src = Path(workingDir) / f"{rp_path}.par"      
         shutil.copyfile(mp_file_src, mp_path)
 
     return mp_path
 
 def MARSS_main(timeseriesFile, MB, workingDir,*args):
     # Get name of run
-    runName = os.path.splitext(os.path.basename(timeseriesFile))[0]
-
+    #runName = os.path.splitext(os.path.basename(timeseriesFile))[0]
+    # the above has problem handling files like XXX.nii.gz
+    runName,ext = split_nii_ext(timeseriesFile)
 
     # Create a new folder
-    runDir = os.path.join(workingDir, runName)
-    if not os.path.exists(runDir):
-        os.makedirs(runDir)
+    #runDir = os.path.join(workingDir, runName)
+    #if not os.path.exists(runDir):
+    #    os.makedirs(runDir)
+    runDir = Path(workingDir) / runName
+    runDir.mkdir(parents=True, exist_ok=True)
 
     varargin = args
     
@@ -84,7 +109,7 @@ def MARSS_main(timeseriesFile, MB, workingDir,*args):
             print('User provided motion parameters. Skipping motion parameter estimation...')
             userMPprovided = True
             shutil.copy2(userMPpath,runDir)
-            p, f = os.path.split(userMPpath)
+            _, f = os.path.split(userMPpath)
             preMARSS_MPpath = os.path.join(runDir,f)
             matrix = text_to_matrix(preMARSS_MPpath)
 
@@ -152,21 +177,27 @@ def MARSS_mbCorrPlot(fname,MPs,MB,runDir):
     corr = np.corrcoef(rd, rowvar=False) 
     
     # Create the heatmap
+    # Modified by Ruben Sanchez-Romero, Sept 2025, to use seaborn and a seismic plot.
     plt.figure(figsize=(8, 6))
-    heat = plt.pcolor(corr, cmap='viridis')
-    plt.gca().invert_yaxis()
-    cbar = plt.colorbar(heat)
-    cbar.set_label('Pearson\'s R', rotation = 270, fontsize = 16, labelpad=10)
- 
-    plt.title("ΔR = " + str(np.round(correlation_difference,decimals = 4)), fontsize = 20)
-    plt.xlabel('Slice #', fontsize = 16)
-    plt.ylabel('Slice #', fontsize = 16)
-    
+    #heat = plt.pcolor(corr, cmap='viridis')
+    #plt.gca().invert_yaxis()
+    #cbar = plt.colorbar(heat)
+    #cbar.set_label('Pearson\'s R', rotation = 270, fontsize = 16, labelpad=10)
+    ax = sns.heatmap(corr,cmap="seismic",center=0,cbar_kws={"label": "Pearson's R"})
+    ax.invert_yaxis()
+    plt.title("ΔR = " + str(np.round(correlation_difference, 4)), fontsize=20)
+    plt.xlabel("Slice #", fontsize=16)
+    plt.ylabel("Slice #", fontsize=16)
+    cbar = ax.collections[0].colorbar
+    cbar.ax.yaxis.label.set_size(16)
+    cbar.ax.yaxis.label.set_rotation(270)
+    cbar.ax.yaxis.labelpad = 10
 
-    p, f = os.path.split(fname)
-    f = os.path.splitext(f)[0]
+    #p, f = os.path.split(fname)
+    #f = os.path.splitext(f)[0]
+    f,ext = split_nii_ext(fname)
 
-    plt.savefig(os.path.join(runDir, f"corrMatrix{f}.png"))
+    plt.savefig(os.path.join(runDir, f"corrMatrix_{f}.png"))
     # save correlation matrix as png to runDir (will require some filename manipulations)
 
 def MARSS_avgMBcorr(dat, MB):
@@ -282,15 +313,16 @@ def MARSS_removeSliceArtifact(filename,MB,MPs,working_dir):
         Yart[:, :, j, :] = Yartt
 
         # Create filenames for output
-        base_name = os.path.basename(filename)
-        f, x = os.path.splitext(base_name)
+        #base_name = os.path.basename(filename)
+        #f, x = os.path.splitext(base_name)
+        f,ext = split_nii_ext(filename)
 
     for j in range(Y.shape[3]):
         # Corrected Data
-        corrected_filename = os.path.join(working_dir, f'za{f}{x}')
+        corrected_filename = os.path.join(working_dir, f'za_{f}{ext}')
         
         # Isolated artifact timeseries
-        artifact_filename = os.path.join(working_dir, f'{f}_slcart{x}')
+        artifact_filename = os.path.join(working_dir, f'{f}_slcart{ext}')
         
     nib.save(nib.Nifti1Image(Ya, img.affine), corrected_filename)
     nib.save(nib.Nifti1Image(Yart, img.affine), artifact_filename)
@@ -298,10 +330,10 @@ def MARSS_removeSliceArtifact(filename,MB,MPs,working_dir):
     Yaavg = np.mean(np.abs(Yart), axis=3)
 
     # Average artifact distribution
-    avg_artifact_filename = os.path.join(working_dir, f'{f}_AVGslcart{x}')
+    avg_artifact_filename = os.path.join(working_dir, f'{f}_AVGslcart{ext}')
     nib.save(nib.Nifti1Image(Yaavg, img.affine), avg_artifact_filename)
 
-    postMARSS_fname = os.path.join(working_dir, f'za{f}{x}')
-    postMARSS_avgSlcArt_fname = os.path.join(working_dir, f'{f}_AVGslcart{x}')    
+    postMARSS_fname = os.path.join(working_dir, f'za_{f}{ext}')
+    postMARSS_avgSlcArt_fname = os.path.join(working_dir, f'{f}_AVGslcart{ext}')    
         
     return [postMARSS_fname, postMARSS_avgSlcArt_fname]
