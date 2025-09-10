@@ -32,6 +32,8 @@ def split_nii_ext(filename: str):
 def MARSS_getMPs(fn, MB, workingDir):
     # Ruben: this get motion parameters using mcflirt
 
+    workingDir = Path(workingDir)
+
     # Load volume timeseries
     V = nib.load(fn)
 
@@ -46,34 +48,35 @@ def MARSS_getMPs(fn, MB, workingDir):
     # Check workingDir for MPs
     # Use Path instead of os.path
     #mp_path = os.path.join(workingDir, f"rp_{f}.txt")
-    mp_path = Path(workingDir) / f"rp_{f}.txt"
+    mp_path = workingDir / f"rp_{f}.txt" # why need to transform files to .txt?
+
 
     if not os.path.exists(mp_path):
         
         mcflt = fsl.MCFLIRT()
-        
         mcflt.inputs.in_file = fn
-        
         mcflt.inputs.cost = 'mutualinfo'
+        #consider using 'normcorr', maybe faster and good results
         
         #rp_path = os.path.join(workingDir, f"rp_{f}{ext}")
-        rp_path = Path(workingDir) / f"rp_{f}{ext}"
+        rp_path = workingDir / f"rp_{f}{ext}"
         mcflt.inputs.out_file = rp_path
-        mcflt.inputs.output_type = "NIFTI"
-
+        #mcflt.inputs.output_type = "NIFTI" %not necessary, use default
         mcflt.inputs.save_rms = False
-        mcflt.inputs.save_plots = True
+        mcflt.inputs.save_plots = True 
         mcflt.inputs.save_mats = False
         
         res = mcflt.run()
 
         # delete motion-corrected output
-        os.remove(rp_path)
+        #os.remove(rp_path)
+        Path(res.outputs.out_file).unlink(missing_ok=True)
 
     # Copy the MP text file to the working directory
     if not os.path.exists(mp_path):
-        
-        mp_file_src = Path(workingDir) / f"{rp_path}.par"      
+        #mp_file_src = workingDir / f"{rp_path}.par"
+        # Use this to avoid defining the file name 
+        mp_file_src = Path(res.outputs.par_file)     
         shutil.copyfile(mp_file_src, mp_path)
 
     return mp_path
@@ -121,6 +124,7 @@ def MARSS_main(timeseriesFile, MB, workingDir,*args):
     
     print('Generating post-MARSS Motion Parameters and Slice Correlations...')
     postMARSS_MPpath = MARSS_getMPs(postMARSS_fname, MB, runDir)
+    # confirm if this is a bug, should be postMARSS_MPpath?
     matrix = text_to_matrix(preMARSS_MPpath)
     MARSS_mbCorrPlot(postMARSS_fname, matrix, MB,runDir)   
 
@@ -138,7 +142,7 @@ def text_to_matrix(file_path):
     return np.array(matrix)
 
 def MARSS_mbCorrPlot(fname,MPs,MB,runDir):
-    timeSeriesDat = nib.load(fname);
+    timeSeriesDat = nib.load(fname)
     timeSeriesDat = timeSeriesDat.get_fdata()
     d = np.mean(np.mean(timeSeriesDat, axis = 0), axis = 0)
     d = d.T    
