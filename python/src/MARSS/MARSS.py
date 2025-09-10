@@ -1,20 +1,11 @@
 from nipype.interfaces import fsl
 from scipy.ndimage import rotate
 import matplotlib.pyplot as plt
-import seaborn as sns
 import numpy as np
 import nibabel as nib
 from scipy.stats import zscore
 import numpy as np
 import os
-import pandas
-import matplotlib
-import scipy
-import networkx
-import numpy
-import traits 
-import traitsui 
-import nipype
 import seaborn as sns
 import shutil
 import re
@@ -269,10 +260,12 @@ def MARSS_estimateSliceArtifact(Y,MB,X):
 
 
 def MARSS_removeSliceArtifact(filename,MB,MPs,working_dir):
+    
+    working_dir = Path(working_dir)
+    
     img = nib.load(filename)
     Y = img.get_fdata()
-    V = img.header
-
+    #V = img.header
     hdr = img.header
     hdr.set_data_dtype(np.float32)  
     #Y = Y.astype(np.float64)
@@ -319,10 +312,10 @@ def MARSS_removeSliceArtifact(filename,MB,MPs,working_dir):
 
     for j in range(Y.shape[3]):
         # Corrected Data
-        corrected_filename = os.path.join(working_dir, f'za_{f}{ext}')
+        corrected_filename = working_dir / f'za_{f}{ext}'
         
         # Isolated artifact timeseries
-        artifact_filename = os.path.join(working_dir, f'{f}_slcart{ext}')
+        artifact_filename = working_dir / f'{f}_slcart{ext}'
         
     nib.save(nib.Nifti1Image(Ya, img.affine), corrected_filename)
     nib.save(nib.Nifti1Image(Yart, img.affine), artifact_filename)
@@ -330,10 +323,10 @@ def MARSS_removeSliceArtifact(filename,MB,MPs,working_dir):
     Yaavg = np.mean(np.abs(Yart), axis=3)
 
     # Average artifact distribution
-    avg_artifact_filename = os.path.join(working_dir, f'{f}_AVGslcart{ext}')
+    avg_artifact_filename = working_dir / f'{f}_AVGslcart{ext}'
     nib.save(nib.Nifti1Image(Yaavg, img.affine), avg_artifact_filename)
 
-    postMARSS_fname = os.path.join(working_dir, f'za_{f}{ext}')
-    postMARSS_avgSlcArt_fname = os.path.join(working_dir, f'{f}_AVGslcart{ext}')    
+    postMARSS_fname = working_dir / f'za_{f}{ext}'
+    postMARSS_avgSlcArt_fname = working_dir / f'{f}_AVGslcart{ext}'    
         
     return [postMARSS_fname, postMARSS_avgSlcArt_fname]
