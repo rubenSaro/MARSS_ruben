@@ -30,13 +30,10 @@ def split_nii_ext(filename: str):
 
 
 def MARSS_getMPs(fn, MB, workingDir):
-    # Ruben: this get motion parameters using mcflirt
-
+    # Motion parameters using fsl's mcflirt
     workingDir = Path(workingDir)
-
     # Load volume timeseries
     V = nib.load(fn)
-
     if V.shape[2] % MB != 0:
         raise ValueError(f"Number of slices and MB factor are incompatible for {fn}.")
 
@@ -51,12 +48,11 @@ def MARSS_getMPs(fn, MB, workingDir):
     mp_path = workingDir / f"rp_{f}.txt" # why need to transform files to .txt?
 
 
-    if not os.path.exists(mp_path):
+    if not mp_path.is_file():
         
         mcflt = fsl.MCFLIRT()
         mcflt.inputs.in_file = fn
-        mcflt.inputs.cost = 'mutualinfo'
-        #consider using 'normcorr', maybe faster and good results
+        mcflt.inputs.cost = 'mutualinfo' # can use the default normcorr
         
         #rp_path = os.path.join(workingDir, f"rp_{f}{ext}")
         rp_path = workingDir / f"rp_{f}{ext}"
@@ -65,7 +61,7 @@ def MARSS_getMPs(fn, MB, workingDir):
         mcflt.inputs.save_rms = False
         mcflt.inputs.save_plots = True 
         mcflt.inputs.save_mats = False
-        
+        print('Computing motion parameters with FSL MCFLIRT...')
         res = mcflt.run()
 
         # delete motion-corrected output
@@ -73,10 +69,11 @@ def MARSS_getMPs(fn, MB, workingDir):
         Path(res.outputs.out_file).unlink(missing_ok=True)
 
     # Copy the MP text file to the working directory
-    if not os.path.exists(mp_path):
+    if not mp_path.is_file():
         #mp_file_src = workingDir / f"{rp_path}.par"
-        # Use this to avoid defining the file name 
-        mp_file_src = Path(res.outputs.par_file)     
+        # Use this to avoid defining the file name
+        print(f'Saving motion parameters in {mp_path}...')   
+        mp_file_src = Path(res.outputs.par_file)   
         shutil.copyfile(mp_file_src, mp_path)
 
     return mp_path
@@ -122,10 +119,13 @@ def MARSS_main(timeseriesFile, MB, workingDir,*args):
     print('Performing MARSS Procedure...')
     [postMARSS_fname, postMARSS_avgSlcArt_fname] = MARSS_removeSliceArtifact(timeseriesFile, MB, matrix, runDir)
     
+    # The post-MARSS step is mostly to assess the effect of marss, for our pipeline we can
+    # not run it since we only really care about postMARSS_fname 
+
     print('Generating post-MARSS Motion Parameters and Slice Correlations...')
     postMARSS_MPpath = MARSS_getMPs(postMARSS_fname, MB, runDir)
-    # confirm if this is a bug, should be postMARSS_MPpath?
-    matrix = text_to_matrix(preMARSS_MPpath)
+    # FIXME: confirm if this is a bug, should be postMARSS_MPpath?
+    matrix = text_to_matrix(postMARSS_MPpath)
     MARSS_mbCorrPlot(postMARSS_fname, matrix, MB,runDir)   
 
 def text_to_matrix(file_path):
@@ -181,21 +181,24 @@ def MARSS_mbCorrPlot(fname,MPs,MB,runDir):
     #plt.gca().invert_yaxis()
     #cbar = plt.colorbar(heat)
     #cbar.set_label('Pearson\'s R', rotation = 270, fontsize = 16, labelpad=10)
-    ax = sns.heatmap(corr,cmap="seismic",center=0,cbar_kws={"label": "Pearson's R"})
-    ax.invert_yaxis()
+    
+    ax = sns.heatmap(corr,cmap="seismic",center=0)
     plt.title("ΔR = " + str(np.round(correlation_difference, 4)), fontsize=20)
     plt.xlabel("Slice #", fontsize=16)
     plt.ylabel("Slice #", fontsize=16)
+    ax.set_xticks(range(0, corr.shape[0], 10))
+    ax.set_yticks(range(0, corr.shape[0], 10))
+    ax.set_xticklabels(range(0, corr.shape[0], 10))
+    ax.set_yticklabels(range(0, corr.shape[0], 10), rotation=0)
     cbar = ax.collections[0].colorbar
-    cbar.ax.yaxis.label.set_size(16)
-    cbar.ax.yaxis.label.set_rotation(270)
-    cbar.ax.yaxis.labelpad = 10
+    cbar.set_label('Pearson\'s R', rotation = 270, fontsize = 16, labelpad=10)
+   
 
     #p, f = os.path.split(fname)
     #f = os.path.splitext(f)[0]
     f,ext = split_nii_ext(fname)
 
-    plt.savefig(os.path.join(runDir, f"corrMatrix_{f}.png"))
+    plt.savefig(runDir / f"corrMatrix_{f}.png")
     # save correlation matrix as png to runDir (will require some filename manipulations)
 
 def MARSS_avgMBcorr(dat, MB):
@@ -319,21 +322,22 @@ def MARSS_removeSliceArtifact(filename,MB,MPs,working_dir):
 
     for j in range(Y.shape[3]):
         # Corrected Data
-        corrected_filename = working_dir / f'za_{f}{ext}'
+        # make the output BIDS-like, instead of the za_ prefix
+        f_out = re.sub(r"(_bold)$", r"_desc-marss_bold", f)
+        postMARSS_fname = working_dir / f'{f_out}{ext}'
         
         # Isolated artifact timeseries
-        artifact_filename = working_dir / f'{f}_slcart{ext}'
+        f_out = re.sub(r"(_bold)$", r"_desc-marss-slcart", f)
+        artifact_filename = working_dir / f'{f_out}{ext}'
         
-    nib.save(nib.Nifti1Image(Ya, img.affine), corrected_filename)
+    nib.save(nib.Nifti1Image(Ya, img.affine), postMARSS_fname)
     nib.save(nib.Nifti1Image(Yart, img.affine), artifact_filename)
              
     Yaavg = np.mean(np.abs(Yart), axis=3)
 
     # Average artifact distribution
-    avg_artifact_filename = working_dir / f'{f}_AVGslcart{ext}'
-    nib.save(nib.Nifti1Image(Yaavg, img.affine), avg_artifact_filename)
+    f_out = re.sub(r"(_bold)$", r"_desc-marss-AVGslcart", f)
+    postMARSS_avgSlcArt_fname = working_dir / f'{f_out}{ext}' 
+    nib.save(nib.Nifti1Image(Yaavg, img.affine), postMARSS_avgSlcArt_fname)
 
-    postMARSS_fname = working_dir / f'za_{f}{ext}'
-    postMARSS_avgSlcArt_fname = working_dir / f'{f}_AVGslcart{ext}'    
-        
     return [postMARSS_fname, postMARSS_avgSlcArt_fname]
