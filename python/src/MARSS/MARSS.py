@@ -11,7 +11,10 @@ import shutil
 import re
 from pathlib import Path
 
-# Ruben Sanchez-Romero, Sep 2025, add functionality to work with XXX.nii.gz files
+# Modifications by Ruben Sanchez-Romero, Sep 2025 
+# Add functionality to work with XXX.nii.gz files
+# Uses Path instead of os.path to create directories
+# adds a function split_nii_ext to work extract filename and extension in XXX.nii and XXX.nii.gz files
 
 # Added by Ruben Sanchez-Romero, September 2025
 def split_nii_ext(filename: str):
